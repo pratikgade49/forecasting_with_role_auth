@@ -48,13 +48,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
     try {
       await ApiService.register(registerData);
-      // Auto-login after registration
-      await ApiService.login({
-        username: registerData.username,
-        password: registerData.password
-      });
-      onSuccess();
-      onClose();
+      // Show success message instead of auto-login
+      alert('Account created successfully! Please wait for admin approval before you can access the application.');
+      // Switch to login mode
+      setIsLogin(true);
+      resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
@@ -249,6 +247,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
           <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-sm text-blue-800">
               <strong>Default Admin:</strong> username: admin, password: admin123
+            </p>
+          </div>
+        )}
+        
+        {!isLogin && (
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800">
+              <strong>Note:</strong> New accounts require administrator approval before you can access the application.
             </p>
           </div>
         )}

@@ -18,10 +18,13 @@ import { ConfigurationManager } from './components/ConfigurationManager'; // Imp
 import { ExternalFactorUpload } from './components/ExternalFactorUpload'; // Import ExternalFactorUpload
 import { ModelCacheManager } from './components/ModelCacheManager';
 import { LiveExternalFactorFetch } from './components/LiveExternalFactorFetch';
+import { AdminDashboard } from './components/AdminDashboard';
+
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserResponse | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showDataViewer, setShowDataViewer] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -394,6 +397,10 @@ function App() {
 
   const hasData = databaseStats && databaseStats.totalRecords > 0;
 
+  // Check if user needs approval
+  const needsApproval = currentUser && !currentUser.is_approved && !currentUser.is_admin;
+  const isAdmin = currentUser?.is_admin || false;
+
   // Show auth modal if not authenticated and backend is online
   if (backendStatus === 'online' && !isAuthenticated) {
     return (
@@ -418,6 +425,41 @@ function App() {
       </div>
     );
   }
+
+  // Show pending approval message if user needs approval
+  if (backendStatus === 'online' && isAuthenticated && needsApproval) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-orange-50 flex items-center justify-center">
+        <div className="max-w-md mx-auto text-center bg-white rounded-xl shadow-lg p-8">
+          <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <User className="w-8 h-8 text-yellow-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Account Pending Approval</h1>
+          <p className="text-gray-600 mb-6">
+            Your account has been created successfully, but it requires approval from an administrator before you can access the forecasting application.
+          </p>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <p className="text-sm text-yellow-800">
+              <strong>Account Details:</strong><br />
+              Username: {currentUser.username}<br />
+              Email: {currentUser.email}<br />
+              Status: Pending Approval
+            </p>
+          </div>
+          <p className="text-sm text-gray-500 mb-6">
+            Please contact your system administrator or wait for approval. You will be able to access the application once your account is approved.
+          </p>
+          <button
+            onClick={handleLogout}
+            className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
       {/* Header */}
@@ -451,6 +493,17 @@ function App() {
               </div>
               </div>
             <div className='flex space-x-3'>
+              {/* Admin Dashboard Button */}
+              {isAdmin && (
+                <button
+                  onClick={() => setShowAdminDashboard(true)}
+                  className="inline-flex items-center px-4 py-2 border border-purple-600 rounded-lg text-sm font-medium text-purple-600 bg-white hover:bg-purple-50 transition-colors"
+                >
+                  <Settings className="w-4 h-4 mr-2" />
+                  Admin Dashboard
+                </button>
+              )}
+              
               {/* Logout Button */}
               <button
                 onClick={handleLogout}
@@ -463,7 +516,10 @@ function App() {
               {currentUser && (
                 <div className="flex items-center space-x-2 text-sm text-gray-600">
                   <User className="w-4 h-4" />
-                  <span>{currentUser.full_name || currentUser.username}</span>
+                  <span>
+                    {currentUser.full_name || currentUser.username}
+                    {isAdmin && <span className="ml-1 text-purple-600 font-medium">(Admin)</span>}
+                  </span>
                 </div>
               )}
               </div>
@@ -808,6 +864,14 @@ function App() {
           onClose={() => setShowSavedForecastsManager(false)}
           onViewForecast={handleViewSavedForecast}
         />
+
+        {/* Admin Dashboard */}
+        {isAdmin && (
+          <AdminDashboard
+            isOpen={showAdminDashboard}
+            onClose={() => setShowAdminDashboard(false)}
+          />
+        )}
       </main>
     </div>
   );
