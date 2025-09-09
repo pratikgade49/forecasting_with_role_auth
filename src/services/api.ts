@@ -253,11 +253,65 @@ export interface SavedForecastResponse {
   updated_at: string;
 }
 
+export interface ScheduledForecastCreate {
+  name: string;
+  description?: string;
+  forecast_config: ForecastConfig;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  start_date: string;
+  end_date?: string;
+}
+
+export interface ScheduledForecastUpdate {
+  name?: string;
+  description?: string;
+  frequency?: 'daily' | 'weekly' | 'monthly';
+  start_date?: string;
+  end_date?: string;
+  status?: 'active' | 'paused' | 'completed' | 'failed';
+}
+
+export interface ScheduledForecast {
+  id: number;
+  user_id: number;
+  name: string;
+  description?: string;
+  forecast_config: ForecastConfig;
+  frequency: string;
+  start_date: string;
+  end_date?: string;
+  next_run: string;
+  last_run?: string;
+  status: string;
+  run_count: number;
+  success_count: number;
+  failure_count: number;
+  last_error?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ForecastExecution {
+  id: number;
+  scheduled_forecast_id: number;
+  execution_time: string;
+  status: string;
+  duration_seconds?: number;
+  result_summary?: any;
+  error_message?: string;
+  created_at: string;
+}
+
 export interface FactorCoverageValidation {
     [factorName: string]: {
         coverage: number;
         message: string;
     };
+}
+
+export interface SchedulerStatus {
+  running: boolean;
+  check_interval: number;
 }
 
 export class ApiService {
@@ -418,6 +472,111 @@ export class ApiService {
       throw new Error(error.detail || 'Failed to delete saved forecast');
     }
   }
+
+  // Scheduled Forecasts API methods
+  static async createScheduledForecast(request: ScheduledForecastCreate): Promise<ScheduledForecast> {
+    const response = await fetch(`${API_BASE_URL}/scheduled_forecasts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeaders(),
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to create scheduled forecast');
+    }
+
+    return response.json();
+  }
+
+  static async getScheduledForecasts(): Promise<ScheduledForecast[]> {
+    const response = await fetch(`${API_BASE_URL}/scheduled_forecasts`, {
+      headers: {
+        ...this.getAuthHeaders(),
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch scheduled forecasts');
+    }
+
+    return response.json();
+  }
+
+  static async getScheduledForecast(id: number): Promise<ScheduledForecast> {
+    const response = await fetch(`${API_BASE_URL}/scheduled_forecasts/${id}`, {
+      headers: {
+        ...this.getAuthHeaders(),
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch scheduled forecast');
+    }
+
+    return response.json();
+  }
+
+  static async updateScheduledForecast(id: number, request: ScheduledForecastUpdate): Promise<ScheduledForecast> {
+    const response = await fetch(`${API_BASE_URL}/scheduled_forecasts/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeaders(),
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to update scheduled forecast');
+    }
+
+    return response.json();
+  }
+
+  static async deleteScheduledForecast(id: number): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/scheduled_forecasts/${id}`, {
+      method: 'DELETE',
+      headers: {
+        ...this.getAuthHeaders(),
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete scheduled forecast');
+    }
+  }
+
+  static async getForecastExecutions(scheduledForecastId: number): Promise<ForecastExecution[]> {
+    const response = await fetch(`${API_BASE_URL}/scheduled_forecasts/${scheduledForecastId}/executions`, {
+      headers: {
+        ...this.getAuthHeaders(),
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch forecast executions');
+    }
+
+    return response.json();
+  }
+
+  static async getSchedulerStatus(): Promise<SchedulerStatus> {
+    const response = await fetch(`${API_BASE_URL}/scheduler/status`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch scheduler status');
+    }
+    return response.json();
+  }
+
   static async uploadFile(file: File): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
