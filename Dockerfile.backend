@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    postgresql-client \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app/backend
+
+# Copy backend requirements and install Python dependencies
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy backend source code
+COPY backend/ ./
+
+# Ensure start.sh has correct permissions and line endings
+RUN chmod +x start.sh && dos2unix start.sh || true
+
+# Expose backend port
+EXPOSE 8000
+
+# Start backend
+CMD ["./start.sh"]
