@@ -9,6 +9,7 @@ from sqlalchemy.ext.declarative import declarative_base # type: ignore
 from sqlalchemy.orm import sessionmaker # type: ignore
 from passlib.context import CryptContext # type: ignore
 import os
+from enum import Enum as PyEnum
 from datetime import datetime
 
 # Password hashing
@@ -32,6 +33,230 @@ except Exception as e:
     print("Please ensure:")
     print("1. PostgreSQL server is running")
     print("2. Database 'forecasting_db' exists")
+    print("3. Connection credentials are correct")
+    raise
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+class ScheduleFrequency(PyEnum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+class ScheduleStatus(PyEnum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class ScheduledForecast(Base):
+    """Model for storing scheduled forecast configurations"""
+    __tablename__ = "scheduled_forecasts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    forecast_config = Column(Text, nullable=False)  # JSON string of ForecastConfig
+    frequency = Column(String(20), nullable=False)  # Use String instead of Enum for SQLAlchemy compatibility
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=True)  # Optional end date
+    next_run = Column(DateTime, nullable=False)
+    last_run = Column(DateTime, nullable=True)
+    status = Column(String(20), default='active')  # Use String instead of Enum
+    run_count = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    failure_count = Column(Integer, default=0)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ForecastExecution(Base):
+    """Model for storing forecast execution history"""
+    __tablename__ = "forecast_executions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    scheduled_forecast_id = Column(Integer, nullable=False, index=True)
+    execution_time = Column(DateTime, nullable=False)
+    status = Column(String(50), nullable=False)  # success, failed, running
+    duration_seconds = Column(Integer, nullable=True)
+    result_summary = Column(Text, nullable=True)  # JSON summary of results
+    error_message = Column(Text, nullable=True)
+    forecast_data = Column(Text, nullable=True)  # JSON of forecast results
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class ExternalFactorData(Base):
+    __tablename__ = 'external_factor_data'
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(Date, index=True)
+    factor_name = Column(String(255), index=True)
+    factor_value = Column(Float)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        UniqueConstraint('date', 'factor_name', name='unique_external_factor_record'),
+    )
+
+class User(Base):
+    """Model for user authentication"""
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(100), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    is_approved = Column(Boolean, default=False)  # New: requires admin approval
+    is_admin = Column(Boolean, default=False)      # New: admin flag
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    def verify_password(self, password: str) -> bool:
+        return pwd_context.verify(password, self.hashed_password)
+    
+    @staticmethod
+    def hash_password(password: str) -> str:
+        return pwd_context.hash(password)
+    
+class ForecastData(Base):
+    """Model for storing forecast data from Excel uploads"""
+    __tablename__ = "forecast_data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    product = Column(String(255), nullable=True)
+    quantity = Column(DECIMAL(15, 2), nullable=False)
+    product_group = Column(String(255), nullable=True)
+    product_hierarchy = Column(String(255), nullable=True)
+    location = Column(String(255), nullable=True)
+    location_region = Column(String(255), nullable=True)
+    customer = Column(String(255), nullable=True)
+    customer_group = Column(String(255), nullable=True)
+    customer_region = Column(String(255), nullable=True)
+    ship_to_party = Column(String(255), nullable=True)
+    sold_to_party = Column(String(255), nullable=True)
+    uom = Column(String(50), nullable=True)
+    date = Column(Date, nullable=False)
+    unit_price = Column(DECIMAL(15, 2), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Unique constraint to prevent duplicates
+    __table_args__ = (
+        UniqueConstraint(
+            'product', 'customer', 'location', 'date',
+            name='unique_forecast_record'
+        ),
+    )
+
+class SavedForecastResult(Base):
+    """Model for storing user's saved forecast results"""
+    __tablename__ = "saved_forecast_results"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)  # Foreign key to users table
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    forecast_config = Column(Text, nullable=False)  # JSON string of ForecastConfig
+    forecast_data = Column(Text, nullable=False)  # JSON string of ForecastResult
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Unique constraint for user + name combination
+    __table_args__ = (
+        UniqueConstraint('user_id', 'name', name='unique_user_forecast_name'),
+    )
+
+class ForecastConfiguration(Base):
+    """Model for storing forecast configurations"""
+    __tablename__ = "forecast_configurations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    forecast_by = Column(String(50), nullable=False)
+    selected_item = Column(String(255), nullable=True)
+    selected_product = Column(String(255), nullable=True)
+    selected_customer = Column(String(255), nullable=True)
+    selected_location = Column(String(255), nullable=True)
+    algorithm = Column(String(100), nullable=False, default='best_fit')
+    interval = Column(String(20), nullable=False, default='month')
+    historic_period = Column(Integer, nullable=False, default=12)
+    forecast_period = Column(Integer, nullable=False, default=6)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Unique constraint for configuration name
+    __table_args__ = (
+        UniqueConstraint('name', name='unique_config_name'),
+    )
+
+def create_default_user():
+    """Create default admin user if no users exist"""
+    try:
+        db = SessionLocal()
+        user_count = db.query(User).count()
+        if user_count == 0:
+            default_user = User(
+                username="admin",
+                email="admin@forecasting.com",
+                hashed_password=User.hash_password("admin123"),
+                full_name="System Administrator",
+                is_active=True,
+                is_approved=True,
+                is_admin=True
+            )
+            db.add(default_user)
+            db.commit()
+            print("✅ Default admin user created (username: admin, password: admin123)")
+        db.close()
+    except Exception as e:
+        print(f"⚠️  Error creating default user: {e}")
+
+# Import model persistence tables
+from model_persistence import SavedModel, ModelAccuracyHistory
+
+def create_tables():
+    """Create all tables"""
+    try:
+        Base.metadata.create_all(bind=engine)
+        # Also create model persistence tables
+        SavedModel.metadata.create_all(bind=engine)
+        ModelAccuracyHistory.metadata.create_all(bind=engine)
+        print("✅ Database tables verified/created successfully!")
+        print("✅ Saved forecast results table created!")
+        print("✅ Scheduled forecasts tables created!")
+        create_default_user()
+        return True
+    except Exception as e:
+        print(f"❌ Error creating tables: {e}")
+        return False
+
+def get_db():
+    """Get database session"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def init_database():
+    """Initialize database tables (assumes database already exists)"""
+    try:
+        # Test connection first
+        with engine.connect() as connection:
+            print("✅ Database connection successful!")
+        
+        # Create tables if they don't exist
+        return create_tables()
+    except Exception as e:
+        print(f"❌ Error initializing database: {e}")
+        print("Please ensure:")
+        print("1. PostgreSQL server is running")
+        print("2. Database 'forecasting_db' exists")
+        print("3. User has proper permissions")
+        return False
     print("3. Connection credentials are correct")
     raise
 
