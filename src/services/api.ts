@@ -331,6 +331,7 @@ export interface ResolveSelectionKeyResponse {
   selection_key: ForecastSelectionKey;
   created: boolean;
 }
+
 export class ApiService {
   private static getAuthHeaders(): HeadersInit {
     const token = localStorage.getItem('access_token');

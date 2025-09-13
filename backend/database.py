@@ -40,6 +40,40 @@ except Exception as e:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+class ForecastSelectionKey(Base):
+    """Model for storing unique forecast selection combinations"""
+    __tablename__ = "forecast_selection_keys"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    product = Column(String(255), nullable=True)
+    customer = Column(String(255), nullable=True)
+    location = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Unique constraint to ensure each combination is stored only once
+    __table_args__ = (
+        UniqueConstraint('product', 'customer', 'location', name='unique_selection_combination'),
+    )
+    
+    def get_display_name(self) -> str:
+        """Get a human-readable display name for this selection"""
+        parts = []
+        if self.product:
+            parts.append(f"Product: {self.product}")
+        if self.customer:
+            parts.append(f"Customer: {self.customer}")
+        if self.location:
+            parts.append(f"Location: {self.location}")
+        return " | ".join(parts) if parts else "No selection"
+    
+    def get_combination_dict(self) -> dict:
+        """Get combination as dictionary for API responses"""
+        return {
+            'product': self.product,
+            'customer': self.customer,
+            'location': self.location
+        }
 class ExternalFactorData(Base):
     __tablename__ = 'external_factor_data'
     id = Column(Integer, primary_key=True, index=True)
@@ -165,12 +199,12 @@ class ForecastConfiguration(Base):
     description = Column(Text, nullable=True)
     forecast_by = Column(String(50), nullable=False)
     selection_key_id = Column(Integer, ForeignKey('forecast_selection_keys.id'), nullable=True)
-    algorithm = Column(String(100), nullable=False, default='best_fit')
-    interval = Column(String(20), nullable=False, default='month')
-    historic_period = Column(Integer, nullable=False, default=12)
     forecast_period = Column(Integer, nullable=False, default=6)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship to ForecastSelectionKey
+    selection_key = relationship("ForecastSelectionKey")
     
     # Relationship to ForecastSelectionKey
     selection_key = relationship("ForecastSelectionKey")

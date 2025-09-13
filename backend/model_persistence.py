@@ -71,9 +71,6 @@ class ModelPersistenceManager:
         normalized_config = {
             'forecastBy': config.get('forecastBy', ''),
             'selectionKeyId': config.get('selectionKeyId', ''),
-            'algorithm': config.get('algorithm', ''),
-            'interval': config.get('interval', ''),
-            'historicPeriod': config.get('historicPeriod', 0),
             'forecastPeriod': config.get('forecastPeriod', 0),
             'externalFactors': get_safe_list(config.get('externalFactors'))
         }
