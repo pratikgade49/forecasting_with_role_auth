@@ -4,19 +4,18 @@ Database configuration and models for PostgreSQL integration
 
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, UniqueConstraint, Boolean, DECIMAL, Text, ForeignKey # type: ignore
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, UniqueConstraint, Boolean, DECIMAL, Text # type: ignore
 from sqlalchemy.ext.declarative import declarative_base # type: ignore
-from sqlalchemy.orm import sessionmaker, relationship # type: ignore
+from sqlalchemy.orm import sessionmaker # type: ignore
 from passlib.context import CryptContext # type: ignore
 import os
-from enum import Enum as PyEnum
 from datetime import datetime
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # Make sure which credantals are used to connect locally or in cloud environment
 DB_HOST = os.getenv("DB_HOST", "localhost") #172.17.0.1
-DB_PORT = os.getenv("DB_PORT", "5433")  #5432
+DB_PORT = os.getenv("DB_PORT", "5432")  #5432
 DB_USER = os.getenv("DB_USER", "postgres")  # Changed from root to postgres
 DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
 DB_NAME = os.getenv("DB_NAME", "forecasting_db")
@@ -39,53 +38,6 @@ except Exception as e:
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-class ScheduleFrequency(PyEnum):
-    DAILY = "daily"
-    WEEKLY = "weekly"
-    MONTHLY = "monthly"
-
-class ScheduleStatus(PyEnum):
-    ACTIVE = "active"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-class ScheduledForecast(Base):
-    """Model for storing scheduled forecast configurations"""
-    __tablename__ = "scheduled_forecasts"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    forecast_config = Column(Text, nullable=False)  # JSON string of ForecastConfig
-    frequency = Column(String(20), nullable=False)  # Use String instead of Enum for SQLAlchemy compatibility
-    start_date = Column(DateTime, nullable=False)
-    end_date = Column(DateTime, nullable=True)  # Optional end date
-    next_run = Column(DateTime, nullable=False)
-    last_run = Column(DateTime, nullable=True)
-    status = Column(String(20), default='active')  # Use String instead of Enum
-    run_count = Column(Integer, default=0)
-    success_count = Column(Integer, default=0)
-    failure_count = Column(Integer, default=0)
-    last_error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-class ForecastExecution(Base):
-    """Model for storing forecast execution history"""
-    __tablename__ = "forecast_executions"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    scheduled_forecast_id = Column(Integer, nullable=False, index=True)
-    execution_time = Column(DateTime, nullable=False)
-    status = Column(String(50), nullable=False)  # success, failed, running
-    duration_seconds = Column(Integer, nullable=True)
-    result_summary = Column(Text, nullable=True)  # JSON summary of results
-    error_message = Column(Text, nullable=True)
-    forecast_data = Column(Text, nullable=True)  # JSON of forecast results
-    created_at = Column(DateTime, default=datetime.utcnow)
-
 class ExternalFactorData(Base):
     __tablename__ = 'external_factor_data'
     id = Column(Integer, primary_key=True, index=True)
@@ -97,35 +49,6 @@ class ExternalFactorData(Base):
     __table_args__ = (
         UniqueConstraint('date', 'factor_name', name='unique_external_factor_record'),
     )
-
-class ProductCustomerLocationCombination(Base):
-    """Model for storing unique combinations of product, customer, and location"""
-    __tablename__ = "product_customer_location_combinations"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    product = Column(String(255), nullable=True, index=True)
-    customer = Column(String(255), nullable=True, index=True)
-    location = Column(String(255), nullable=True, index=True)
-    product_group = Column(String(255), nullable=True)
-    product_hierarchy = Column(String(255), nullable=True)
-    location_region = Column(String(255), nullable=True)
-    customer_group = Column(String(255), nullable=True)
-    customer_region = Column(String(255), nullable=True)
-    ship_to_party = Column(String(255), nullable=True)
-    sold_to_party = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Unique constraint to prevent duplicate combinations
-    __table_args__ = (
-        UniqueConstraint(
-            'product', 'customer', 'location',
-            name='unique_product_customer_location_combination'
-        ),
-    )
-    
-    # Relationship to forecast data
-    forecast_data = relationship("ForecastData", back_populates="combination")
 
 class User(Base):
     """Model for user authentication"""
@@ -154,21 +77,27 @@ class ForecastData(Base):
     __tablename__ = "forecast_data"
     
     id = Column(Integer, primary_key=True, index=True)
-    combination_id = Column(Integer, ForeignKey('product_customer_location_combinations.id'), nullable=False, index=True)
+    product = Column(String(255), nullable=True)
     quantity = Column(DECIMAL(15, 2), nullable=False)
+    product_group = Column(String(255), nullable=True)
+    product_hierarchy = Column(String(255), nullable=True)
+    location = Column(String(255), nullable=True)
+    location_region = Column(String(255), nullable=True)
+    customer = Column(String(255), nullable=True)
+    customer_group = Column(String(255), nullable=True)
+    customer_region = Column(String(255), nullable=True)
+    ship_to_party = Column(String(255), nullable=True)
+    sold_to_party = Column(String(255), nullable=True)
     uom = Column(String(50), nullable=True)
     date = Column(Date, nullable=False)
     unit_price = Column(DECIMAL(15, 2), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationship to combination
-    combination = relationship("ProductCustomerLocationCombination", back_populates="forecast_data")
-    
-    # Unique constraint to prevent duplicates (now using combination_id)
+    # Unique constraint to prevent duplicates
     __table_args__ = (
         UniqueConstraint(
-            'combination_id', 'date',
+            'product', 'customer', 'location', 'date',
             name='unique_forecast_record'
         ),
     )
@@ -249,7 +178,6 @@ def create_tables():
         ModelAccuracyHistory.metadata.create_all(bind=engine)
         print("✅ Database tables verified/created successfully!")
         print("✅ Saved forecast results table created!")
-        print("✅ Scheduled forecasts tables created!")
         create_default_user()
         return True
     except Exception as e:

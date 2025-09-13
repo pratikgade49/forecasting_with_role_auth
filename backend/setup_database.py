@@ -6,7 +6,6 @@ Assumes the database already exists and only creates tables
 
 import os
 from database import init_database
-from data_migration import migrate_existing_data, verify_migration
 
 def setup_tables():
     """Setup database tables (assumes database already exists)"""
@@ -43,17 +42,6 @@ def setup_tables():
             print("3. Check database credentials in .env file")
             print("4. Ensure user has CREATE TABLE privileges")
             return False
-            
-            # Run data migration
-            print("\n🔄 Running data migration...")
-            if migrate_existing_data():
-                print("✅ Data migration completed successfully!")
-                if verify_migration():
-                    print("✅ Migration verification passed!")
-                else:
-                    print("⚠️  Migration verification failed!")
-            else:
-                print("❌ Data migration failed!")
             
     except Exception as e:
         print(f"❌ Unexpected error: {e}")

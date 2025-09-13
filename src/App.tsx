@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, Settings, Download, AlertCircle, CheckCircle, XCircle, Database, Upload, Eye, LogOut, User, Clock } from 'lucide-react';
+import { BarChart3, Settings, Download, AlertCircle, CheckCircle, XCircle, Database, Upload, Eye, LogOut, User } from 'lucide-react';
 import { TrendingUp } from 'lucide-react';
 import { FileUpload } from './components/FileUpload';
 import { ForecastConfiguration } from './components/ForecastConfiguration';
@@ -16,7 +16,6 @@ import { ApiService, ForecastConfig, ForecastResult, DatabaseStatsType, UserResp
 import type { MultiForecastResult } from './services/api';
 import { ConfigurationManager } from './components/ConfigurationManager'; // Import ConfigurationManager
 import { ExternalFactorUpload } from './components/ExternalFactorUpload'; // Import ExternalFactorUpload
-import { ScheduledForecastManager } from './components/ScheduledForecastManager'; // Import ScheduledForecastManager
 import { ModelCacheManager } from './components/ModelCacheManager';
 import { LiveExternalFactorFetch } from './components/LiveExternalFactorFetch';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -27,7 +26,6 @@ function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showDataViewer, setShowDataViewer] = useState(false);
-  const [showScheduledForecasts, setShowScheduledForecasts] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -619,15 +617,6 @@ function App() {
                 View Saved Forecasts
               </button>
               
-              {/* Scheduled Forecasts Button */}
-              <button
-                onClick={() => setShowScheduledForecasts(true)}
-                className="inline-flex items-center px-4 py-2 border border-orange-600 rounded-lg text-sm font-medium text-orange-600 bg-white hover:bg-orange-50 transition-colors"
-              >
-                <Clock className="w-4 h-4 mr-2" />
-                Scheduled Forecasts
-              </button>
-              
               {step !== 'configure' && (
                 <button
                   onClick={handleReset}
@@ -874,13 +863,6 @@ function App() {
           isOpen={showSavedForecastsManager}
           onClose={() => setShowSavedForecastsManager(false)}
           onViewForecast={handleViewSavedForecast}
-        />
-
-        {/* Scheduled Forecasts Manager */}
-        <ScheduledForecastManager
-          isOpen={showScheduledForecasts}
-          onClose={() => setShowScheduledForecasts(false)}
-          currentConfig={config}
         />
 
         {/* Admin Dashboard */}
