@@ -363,6 +363,7 @@ function App() {
     setConfig({
       forecastBy: 'product',
       selectionKeyId: undefined,
+      selectionKeyId: undefined,
       selectedProducts: [],
       selectedCustomers: [],
       selectedLocations: [],

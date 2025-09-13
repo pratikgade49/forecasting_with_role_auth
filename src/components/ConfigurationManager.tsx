@@ -157,6 +157,10 @@ export const ConfigurationManager: React.FC<ConfigurationManagerProps> = ({
       return `${config.forecastBy}: ${config.selectedItems[0]}`;
     } else if (config.selectedItems && config.selectedItems.length > 1) {
       return `${config.selectedItems.length} ${config.forecastBy}s selected`;
+    } else if (config.selectedItems && config.selectedItems.length === 1) {
+      return `${config.forecastBy}: ${config.selectedItems[0]}`;
+    } else if (config.selectedItems && config.selectedItems.length > 1) {
+      return `${config.selectedItems.length} ${config.forecastBy}s selected`;
     } else {
       return `${config.forecastBy}: Not selected`;
     }
