@@ -7,6 +7,8 @@ Database configuration and models for PostgreSQL integration
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, UniqueConstraint, Boolean, DECIMAL, Text # type: ignore
 from sqlalchemy.ext.declarative import declarative_base # type: ignore
 from sqlalchemy.orm import sessionmaker # type: ignore
+from sqlalchemy import ForeignKey # type: ignore
+from sqlalchemy.orm import relationship # type: ignore
 from passlib.context import CryptContext # type: ignore
 import os
 from datetime import datetime
@@ -72,6 +74,40 @@ class User(Base):
     def hash_password(password: str) -> str:
         return pwd_context.hash(password)
     
+class ForecastSelectionKey(Base):
+    """Model for storing unique forecast selection combinations"""
+    __tablename__ = "forecast_selection_keys"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    product = Column(String(255), nullable=True)
+    customer = Column(String(255), nullable=True)
+    location = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Unique constraint to ensure each combination is stored only once
+    __table_args__ = (
+        UniqueConstraint('product', 'customer', 'location', name='unique_selection_combination'),
+    )
+    
+    def get_display_name(self) -> str:
+        """Get a human-readable display name for this selection"""
+        parts = []
+        if self.product:
+            parts.append(f"Product: {self.product}")
+        if self.customer:
+            parts.append(f"Customer: {self.customer}")
+        if self.location:
+            parts.append(f"Location: {self.location}")
+        return " | ".join(parts) if parts else "No selection"
+    
+    def get_combination_dict(self) -> dict:
+        """Get combination as dictionary for API responses"""
+        return {
+            'product': self.product,
+            'customer': self.customer,
+            'location': self.location
+        }
 class ForecastData(Base):
     """Model for storing forecast data from Excel uploads"""
     __tablename__ = "forecast_data"
@@ -128,16 +164,16 @@ class ForecastConfiguration(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     forecast_by = Column(String(50), nullable=False)
-    selected_item = Column(String(255), nullable=True)
-    selected_product = Column(String(255), nullable=True)
-    selected_customer = Column(String(255), nullable=True)
-    selected_location = Column(String(255), nullable=True)
+    selection_key_id = Column(Integer, ForeignKey('forecast_selection_keys.id'), nullable=True)
     algorithm = Column(String(100), nullable=False, default='best_fit')
     interval = Column(String(20), nullable=False, default='month')
     historic_period = Column(Integer, nullable=False, default=12)
     forecast_period = Column(Integer, nullable=False, default=6)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship to ForecastSelectionKey
+    selection_key = relationship("ForecastSelectionKey")
     
     # Unique constraint for configuration name
     __table_args__ = (

@@ -149,11 +149,16 @@ export const ConfigurationManager: React.FC<ConfigurationManagerProps> = ({
     setShowLoadDialog(false);
   };
   const getConfigurationSummary = (config: ForecastConfig) => {
-    const isAdvanced = config.selectedProduct && config.selectedCustomer && config.selectedLocation;
-    if (isAdvanced) {
-      return `${config.selectedProduct} → ${config.selectedCustomer} → ${config.selectedLocation}`;
+    if (config.selectedProducts && config.selectedProducts.length === 1 &&
+        config.selectedCustomers && config.selectedCustomers.length === 1 &&
+        config.selectedLocations && config.selectedLocations.length === 1) {
+      return `${config.selectedProducts[0]} → ${config.selectedCustomers[0]} → ${config.selectedLocations[0]}`;
+    } else if (config.selectedItems && config.selectedItems.length === 1) {
+      return `${config.forecastBy}: ${config.selectedItems[0]}`;
+    } else if (config.selectedItems && config.selectedItems.length > 1) {
+      return `${config.selectedItems.length} ${config.forecastBy}s selected`;
     } else {
-      return `${config.forecastBy}: ${config.selectedItem || 'Not selected'}`;
+      return `${config.forecastBy}: Not selected`;
     }
   };
 

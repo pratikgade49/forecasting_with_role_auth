@@ -70,10 +70,7 @@ class ModelPersistenceManager:
         # Create a normalized config for hashing
         normalized_config = {
             'forecastBy': config.get('forecastBy', ''),
-            'selectedItem': config.get('selectedItem', ''),
-            'selectedProduct': config.get('selectedProduct', ''),
-            'selectedCustomer': config.get('selectedCustomer', ''),
-            'selectedLocation': config.get('selectedLocation', ''),
+            'selectionKeyId': config.get('selectionKeyId', ''),
             'algorithm': config.get('algorithm', ''),
             'interval': config.get('interval', ''),
             'historicPeriod': config.get('historicPeriod', 0),

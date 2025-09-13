@@ -41,7 +41,7 @@ function App() {
   const [showSavedForecastsManager, setShowSavedForecastsManager] = useState(false);
   const [config, setConfig] = useState<ForecastConfig>({
     forecastBy: 'product',
-    selectedItem: '',
+    selectionKeyId: undefined,
     selectedProducts: [],
     selectedCustomers: [],
     selectedLocations: [],
@@ -193,22 +193,61 @@ function App() {
   };
 
   const handleGenerateForecast = async () => {
+    let finalConfig = { ...config };
+    
+    // Resolve selection key if needed
+    if (!config.multiSelect && !config.selectionKeyId) {
+      try {
+        // Determine what to resolve based on current selections
+        let resolveRequest: any = {};
+        
+        if (config.selectedItems && config.selectedItems.length === 1) {
+          // Single item selection - need to determine which dimension
+          const item = config.selectedItems[0];
+          if (config.forecastBy === 'product') {
+            resolveRequest.product = item;
+          } else if (config.forecastBy === 'customer') {
+            resolveRequest.customer = item;
+          } else if (config.forecastBy === 'location') {
+            resolveRequest.location = item;
+          }
+        } else if (config.selectedProducts && config.selectedProducts.length === 1 &&
+                   config.selectedCustomers && config.selectedCustomers.length === 1 &&
+                   config.selectedLocations && config.selectedLocations.length === 1) {
+          // Advanced mode - exact combination
+          resolveRequest = {
+            product: config.selectedProducts[0],
+            customer: config.selectedCustomers[0],
+            location: config.selectedLocations[0]
+          };
+        }
+        
+        if (Object.keys(resolveRequest).length > 0) {
+          const selectionKeyResponse = await ApiService.resolveSelectionKey(resolveRequest);
+          finalConfig.selectionKeyId = selectionKeyResponse.selection_key_id;
+        }
+      } catch (err) {
+        setError('Failed to resolve selection key: ' + (err instanceof Error ? err.message : 'Unknown error'));
+        return;
+      }
+    }
+    
     // Validate configuration based on mode
-    if (config.multiSelect) {
-      if (config.advancedMode) {
+    if (finalConfig.multiSelect) {
+      if (finalConfig.advancedMode) {
         // Advanced mode validation
-        if (!config.selectedProducts || config.selectedProducts.length === 0 ||
-            !config.selectedCustomers || config.selectedCustomers.length === 0 ||
-            !config.selectedLocations || config.selectedLocations.length === 0) {
+        if (!finalConfig.selectedProducts || finalConfig.selectedProducts.length === 0 ||
+            !finalConfig.selectedCustomers || finalConfig.selectedCustomers.length === 0 ||
+            !finalConfig.selectedLocations || finalConfig.selectedLocations.length === 0) {
           setError('Advanced mode requires selection of Products, Customers, and Locations');
           return;
         }
       } else {
         // Multi-selection mode validation
         const selectedDimensions = [
-          config.selectedProducts && config.selectedProducts.length > 0,
-          config.selectedCustomers && config.selectedCustomers.length > 0,
-          config.selectedLocations && config.selectedLocations.length > 0
+          finalConfig.selectedProducts && finalConfig.selectedProducts.length > 0,
+          finalConfig.selectedCustomers && finalConfig.selectedCustomers.length > 0,
+          finalConfig.selectedLocations && finalConfig.selectedLocations.length > 0
         ].filter(Boolean).length;
         
         if (selectedDimensions < 2) {
@@ -216,20 +255,13 @@ function App() {
           return;
         }
       }
-    } else if (config.selectedItems && config.selectedItems.length > 1) {
+    } else if (finalConfig.selectedItems && finalConfig.selectedItems.length > 1) {
       // Simple multi-select mode validation
       // No additional validation needed - selectedItems already validated
     } else {
       // Single selection mode validation
-      const isAdvancedMode = config.selectedProduct || config.selectedCustomer || config.selectedLocation;
-      
-      if (isAdvancedMode) {
-        if (!config.selectedProduct || !config.selectedCustomer || !config.selectedLocation) {
-          setError('Please select Product, Customer, and Location for precise forecasting');
-          return;
-        }
-      } else {
-        if (!config.selectedItem) {
+      if (!finalConfig.selectionKeyId) {
+        if (!finalConfig.selectedItems || finalConfig.selectedItems.length === 0) {
           setError('Please select an item to forecast');
           return;
         }
@@ -240,7 +272,7 @@ function App() {
     setError(null);
 
     try {
-      const result = await ApiService.generateForecast(config);
+      const result = await ApiService.generateForecast(finalConfig);
       setForecastResult(result);
       setStep('results');
       
@@ -268,13 +300,7 @@ function App() {
       return true;
     } else {
       // Single selection mode validation
-      const isAdvancedMode = config.selectedProduct || config.selectedCustomer || config.selectedLocation;
-      
-      if (isAdvancedMode) {
-        return config.selectedProduct && config.selectedCustomer && config.selectedLocation;
-      } else {
-        return config.selectedItem;
-      }
+      return config.selectionKeyId || (config.selectedItems && config.selectedItems.length > 0);
     }
   };
 
@@ -322,10 +348,12 @@ function App() {
     } else if (config.selectedItems && config.selectedItems.length > 1) {
       return `${config.selectedItems.length} ${config.forecastBy}s selected`;
     } else {
-      if (config.selectedProduct && config.selectedCustomer && config.selectedLocation) {
-        return `${config.selectedProduct} → ${config.selectedCustomer} → ${config.selectedLocation}`;
-      } else if (config.selectedItem) {
-        return config.selectedItem;
+      if (config.selectedItems && config.selectedItems.length === 1) {
+        return config.selectedItems[0];
+      } else if (config.selectedProducts && config.selectedProducts.length === 1 &&
+                 config.selectedCustomers && config.selectedCustomers.length === 1 &&
+                 config.selectedLocations && config.selectedLocations.length === 1) {
+        return `${config.selectedProducts[0]} → ${config.selectedCustomers[0]} → ${config.selectedLocations[0]}`;
       }
     }
     return 'No selection';
@@ -334,7 +362,7 @@ function App() {
   const handleReset = () => {
     setConfig({
       forecastBy: 'product',
-      selectedItem: '',
+      selectionKeyId: undefined,
       selectedProducts: [],
       selectedCustomers: [],
       selectedLocations: [],

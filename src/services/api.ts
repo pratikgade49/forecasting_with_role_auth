@@ -22,10 +22,7 @@ export interface DatabaseStatsType {
 
 export interface ForecastConfig {
   forecastBy: string;
-  selectedItem?: string;
-  selectedProduct?: string;
-  selectedCustomer?: string;
-  selectedLocation?: string;
+  selectionKeyId?: number;
   selectedProducts?: string[];  // New multi-select fields
   selectedCustomers?: string[];
   selectedLocations?: string[];
@@ -314,6 +311,26 @@ export interface SchedulerStatus {
   check_interval: number;
 }
 
+export interface ForecastSelectionKey {
+  id: number;
+  product?: string;
+  customer?: string;
+  location?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ResolveSelectionKeyRequest {
+  product?: string;
+  customer?: string;
+  location?: string;
+}
+
+export interface ResolveSelectionKeyResponse {
+  selection_key_id: number;
+  selection_key: ForecastSelectionKey;
+  created: boolean;
+}
 export class ApiService {
   private static getAuthHeaders(): HeadersInit {
     const token = localStorage.getItem('access_token');
@@ -577,6 +594,38 @@ export class ApiService {
     return response.json();
   }
 
+  static async resolveSelectionKey(request: ResolveSelectionKeyRequest): Promise<ResolveSelectionKeyResponse> {
+    const response = await fetch(`${API_BASE_URL}/forecast_selection_keys/resolve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.getAuthHeaders(),
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to resolve selection key');
+    }
+
+    return response.json();
+  }
+
+  static async getSelectionKey(id: number): Promise<ForecastSelectionKey> {
+    const response = await fetch(`${API_BASE_URL}/forecast_selection_keys/${id}`, {
+      headers: {
+        ...this.getAuthHeaders(),
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get selection key');
+    }
+
+    return response.json();
+  }
   static async uploadFile(file: File): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
