@@ -4657,7 +4657,8 @@ async def get_configurations(
                     algorithm=config.algorithm,
                     interval=config.interval,
                     historicPeriod=config.historic_period,
-                    forecastPeriod=config.forecast_period
+                    forecastPeriod=config.forecast_period,
+                    selectionKeyId=config.selection_key_id # Include selection_key_id
                 ),
                 createdAt=config.created_at.isoformat(),
                 updatedAt=config.updated_at.isoformat()
@@ -4680,6 +4681,34 @@ async def save_configuration(
         if existing:
             raise HTTPException(status_code=400, detail=f"Configuration with name '{request.name}' already exists")
         
+        # Determine the specific PCL combination for the config
+        product_for_key = None
+        customer_for_key = None
+        location_for_key = None
+
+        if request.config.advancedMode:
+            # Advanced mode implies a specific PCL combination
+            if request.config.selectedProducts and len(request.config.selectedProducts) == 1:
+                product_for_key = request.config.selectedProducts[0]
+            if request.config.selectedCustomers and len(request.config.selectedCustomers) == 1:
+                customer_for_key = request.config.selectedCustomers[0]
+            if request.config.selectedLocations and len(request.config.selectedLocations) == 1:
+                location_for_key = request.config.selectedLocations[0]
+        elif not request.config.multiSelect:
+            # Single selection mode
+            if request.config.forecastBy == 'product':
+                product_for_key = request.config.selectedItem or request.config.selectedProduct
+            elif request.config.forecastBy == 'customer':
+                customer_for_key = request.config.selectedItem or request.config.selectedCustomer
+            elif request.config.forecastBy == 'location':
+                location_for_key = request.config.selectedItem or request.config.selectedLocation
+
+        # Resolve the selection key if a specific combination is identified
+        selection_key_id = None
+        if product_for_key is not None or customer_for_key is not None or location_for_key is not None:
+            selection_key_obj = ForecastingEngine._resolve_selection_key_internal(db, product_for_key, customer_for_key, location_for_key)
+            selection_key_id = selection_key_obj.id
+
         # Create new configuration
         config = ForecastConfiguration(
             name=request.name,
@@ -4692,7 +4721,8 @@ async def save_configuration(
             algorithm=request.config.algorithm,
             interval=request.config.interval,
             historic_period=request.config.historicPeriod,
-            forecast_period=request.config.forecastPeriod
+            forecast_period=request.config.forecastPeriod,
+            selection_key_id=selection_key_id # Store the resolved selection_key_id
         )
         
         db.add(config)
@@ -4735,7 +4765,8 @@ async def get_configuration(
                 algorithm=config.algorithm,
                 interval=config.interval,
                 historicPeriod=config.historic_period,
-                forecastPeriod=config.forecast_period
+                forecastPeriod=config.forecast_period,
+                selectionKeyId=config.selection_key_id # Include selection_key_id
             ),
             createdAt=config.created_at.isoformat(),
             updatedAt=config.updated_at.isoformat()
@@ -4766,6 +4797,34 @@ async def update_configuration(
             if existing:
                 raise HTTPException(status_code=400, detail=f"Configuration with name '{request.name}' already exists")
         
+        # Determine the specific PCL combination for the config
+        product_for_key = None
+        customer_for_key = None
+        location_for_key = None
+
+        if request.config.advancedMode:
+            # Advanced mode implies a specific PCL combination
+            if request.config.selectedProducts and len(request.config.selectedProducts) == 1:
+                product_for_key = request.config.selectedProducts[0]
+            if request.config.selectedCustomers and len(request.config.selectedCustomers) == 1:
+                customer_for_key = request.config.selectedCustomers[0]
+            if request.config.selectedLocations and len(request.config.selectedLocations) == 1:
+                location_for_key = request.config.selectedLocations[0]
+        elif not request.config.multiSelect:
+            # Single selection mode
+            if request.config.forecastBy == 'product':
+                product_for_key = request.config.selectedItem or request.config.selectedProduct
+            elif request.config.forecastBy == 'customer':
+                customer_for_key = request.config.selectedItem or request.config.selectedCustomer
+            elif request.config.forecastBy == 'location':
+                location_for_key = request.config.selectedItem or request.config.selectedLocation
+
+        # Resolve the selection key if a specific combination is identified
+        selection_key_id = None
+        if product_for_key is not None or customer_for_key is not None or location_for_key is not None:
+            selection_key_obj = ForecastingEngine._resolve_selection_key_internal(db, product_for_key, customer_for_key, location_for_key)
+            selection_key_id = selection_key_obj.id
+
         # Update configuration
         config.name = request.name
         config.description = request.description
@@ -4778,6 +4837,7 @@ async def update_configuration(
         config.interval = request.config.interval
         config.historic_period = request.config.historicPeriod
         config.forecast_period = request.config.forecastPeriod
+        config.selection_key_id = selection_key_id # Update the selection_key_id
         config.updated_at = datetime.utcnow()
         
         db.commit()
@@ -4813,6 +4873,7 @@ async def delete_configuration(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error deleting configuration: {str(e)}")
+
 
 @app.get("/saved_forecasts")
 async def get_saved_forecasts(
