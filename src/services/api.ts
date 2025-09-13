@@ -331,7 +331,6 @@ export interface ResolveSelectionKeyResponse {
   selection_key: ForecastSelectionKey;
   created: boolean;
 }
-
 export class ApiService {
   private static getAuthHeaders(): HeadersInit {
     const token = localStorage.getItem('access_token');
@@ -595,38 +594,6 @@ export class ApiService {
     return response.json();
   }
 
-  static async resolveSelectionKey(request: ResolveSelectionKeyRequest): Promise<ResolveSelectionKeyResponse> {
-    const response = await fetch(`${API_BASE_URL}/forecast_selection_keys/resolve`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...this.getAuthHeaders(),
-      },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to resolve selection key');
-    }
-
-    return response.json();
-  }
-
-  static async getSelectionKey(id: number): Promise<ForecastSelectionKey> {
-    const response = await fetch(`${API_BASE_URL}/forecast_selection_keys/${id}`, {
-      headers: {
-        ...this.getAuthHeaders(),
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to get selection key');
-    }
-
-    return response.json();
-  }
   static async uploadFile(file: File): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
