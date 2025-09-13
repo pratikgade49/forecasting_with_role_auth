@@ -3,7 +3,7 @@
 Advanced Multi-variant Forecasting API with MySQL Database Integration
 """
 
-from database import get_db, init_database, ForecastData, User, ExternalFactorData, ForecastConfiguration
+from database import get_db, init_database, ForecastData, User, ExternalFactorData, ForecastConfiguration, ForecastSelectionKey # Add ForecastSelectionKey
 from model_persistence import ModelPersistenceManager, SavedModel, ModelAccuracyHistory
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status # type: ignore
 from fastapi.middleware.cors import CORSMiddleware # type: ignore
@@ -76,6 +76,25 @@ async def startup_event():
         print("⚠️  Database initialization failed - some features may not work")
         print("Please run: python setup_database.py")
 
+# New Pydantic models for SelectionKey
+class ResolveSelectionKeyRequest(BaseModel):
+    product: Optional[str] = None
+    customer: Optional[str] = None
+    location: Optional[str] = None
+
+class ForecastSelectionKeyResponse(BaseModel):
+    id: int
+    product: Optional[str] = None
+    customer: Optional[str] = None
+    location: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+class ResolveSelectionKeyResult(BaseModel):
+    selection_key_id: int
+    selection_key: ForecastSelectionKeyResponse
+    created: bool
+
 class ForecastConfig(BaseModel):
     forecastBy: str
     selectedItem: Optional[str] = None
@@ -93,6 +112,7 @@ class ForecastConfig(BaseModel):
     multiSelect: bool = False  # Flag to indicate multi-selection mode
     advancedMode: bool = False  # Flag to indicate advanced mode (precise combinations)
     externalFactors: Optional[List[str]] = None
+    selectionKeyId: Optional[int] = None # Add this field
 
 class DataPoint(BaseModel):
     date: str
@@ -120,6 +140,7 @@ class ForecastResult(BaseModel):
     allAlgorithms: Optional[List[AlgorithmResult]] = None
     processLog: Optional[List[str]] = None
     configHash: Optional[str] = None # For caching
+    selectionKeyId: Optional[int] = None # Add this field
 
 class MultiForecastResult(BaseModel):
     results: List[ForecastResult]
@@ -265,6 +286,24 @@ class ForecastingEngine:
         "best_ml": "Best Machine Learning Method",
         "best_specialized": "Best Specialized Method"
     }
+
+    @staticmethod
+    def _resolve_selection_key_internal(db: Session, product: Optional[str], customer: Optional[str], location: Optional[str]) -> ForecastSelectionKey:
+        """Internal helper to resolve or create a ForecastSelectionKey."""
+        query = db.query(ForecastSelectionKey).filter(
+            ForecastSelectionKey.product == product,
+            ForecastSelectionKey.customer == customer,
+            ForecastSelectionKey.location == location
+        )
+        existing_key = query.first()
+        if existing_key:
+            return existing_key
+        else:
+            new_key = ForecastSelectionKey(product=product, customer=customer, location=location)
+            db.add(new_key)
+            db.commit()
+            db.refresh(new_key)
+            return new_key
 
     @staticmethod
     def load_data_from_db(db: Session, config: ForecastConfig) -> pd.DataFrame:
@@ -601,6 +640,12 @@ class ForecastingEngine:
                 if process_log is not None:
                     process_log.append(f"Processing item: {item}")
 
+                # Resolve selectionKeyId for this item
+                item_product = item if config.forecastBy == 'product' else None
+                item_customer = item if config.forecastBy == 'customer' else None
+                item_location = item if config.forecastBy == 'location' else None
+                selection_key_obj = ForecastingEngine._resolve_selection_key_internal(db, item_product, item_customer, item_location)
+
                 # Create a single-item config
                 single_config = ForecastConfig(
                     forecastBy=config.forecastBy,
@@ -609,7 +654,8 @@ class ForecastingEngine:
                     interval=config.interval,
                     historicPeriod=config.historicPeriod,
                     forecastPeriod=config.forecastPeriod,
-                    externalFactors=config.externalFactors
+                    externalFactors=config.externalFactors,
+                    selectionKeyId=selection_key_obj.id # Add selectionKeyId here
                 )
 
                 # Load and aggregate data for this item
@@ -717,7 +763,8 @@ class ForecastingEngine:
                         forecastData=best_result.forecastData,
                         trend=best_result.trend,
                         allAlgorithms=algorithm_results,
-                        processLog=process_log.copy() if process_log is not None else None
+                        processLog=process_log.copy() if process_log is not None else None,
+                        selectionKeyId=single_config.selectionKeyId # Populate selectionKeyId
                     )
                 else:
                     if process_log is not None:
@@ -735,7 +782,8 @@ class ForecastingEngine:
                         historicData=result.historicData,
                         forecastData=result.forecastData,
                         trend=result.trend,
-                        processLog=process_log.copy() if process_log is not None else None
+                        processLog=process_log.copy() if process_log is not None else None,
+                        selectionKeyId=single_config.selectionKeyId # Populate selectionKeyId
                     )
 
                 results.append(forecast_result)
@@ -1192,7 +1240,7 @@ class ForecastingEngine:
 
                 levels.append(level)
                 trends.append(trend)
-                fitted.append(level + trend + seasonals[i % season_length])
+                fitted.append(level + trend)
 
         forecast = []
         for i in range(periods):
@@ -2377,7 +2425,7 @@ class ForecastingEngine:
                     model2 = LinearRegression()
                     model2.fit(X2, y2_target)
 
-                    # Forecast theta_line2
+                    # Forecast
                     forecast2 = []
                     recent_smoothed = list(theta_line2[-window:])
 
@@ -2937,6 +2985,7 @@ class ForecastingEngine:
                 else:
                     predicted = y
                 metrics = ForecastingEngine.calculate_metrics(y, predicted)
+            metrics = ForecastingEngine.calculate_metrics(y, predicted)
 
             # Prepare output
             last_date = data['date'].iloc[-1]
@@ -3163,7 +3212,8 @@ class ForecastingEngine:
                 trend=best_model.trend,
                 allAlgorithms=algorithm_results,
                 configHash=config_hash,
-                processLog=process_log
+                processLog=process_log,
+                selectionKeyId=config.selectionKeyId # Populate selectionKeyId
             )
         else:
             if process_log is not None:
@@ -3181,7 +3231,8 @@ class ForecastingEngine:
                 forecastData=result.forecastData,
                 trend=result.trend,
                 configHash=config_hash,
-                processLog=process_log
+                processLog=process_log,
+                selectionKeyId=config.selectionKeyId # Populate selectionKeyId
             )
 
     @staticmethod
@@ -3201,6 +3252,9 @@ class ForecastingEngine:
             try:
                 if process_log is not None:
                     process_log.append(f"Processing combination: {product} + {customer} + {location}")
+
+                # Resolve selectionKeyId for this combination
+                selection_key_obj = ForecastingEngine._resolve_selection_key_internal(db, product, customer, location)
 
                 # Load data for this specific combination
                 df = ForecastingEngine.load_data_for_combination(db, product, customer, location)
@@ -3264,7 +3318,8 @@ class ForecastingEngine:
                         historicPeriod=config.historicPeriod,
                         forecastPeriod=config.forecastPeriod,
                         multiSelect=False,
-                        externalFactors=config.externalFactors
+                        externalFactors=config.externalFactors,
+                        selectionKeyId=selection_key_obj.id # Add selectionKeyId here
                     )
 
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -3305,13 +3360,30 @@ class ForecastingEngine:
                     forecastData=best_result.forecastData,
                     trend=best_result.trend,
                     allAlgorithms=algorithm_results,
-                    processLog=process_log if process_log is not None else []
+                    processLog=process_log if process_log is not None else [],
+                    selectionKeyId=single_config.selectionKeyId # Populate selectionKeyId
                 )
                 else:
                     if process_log is not None:
                         process_log.append(f"Running algorithm: {config.algorithm}")
 
-                    result = ForecastingEngine.run_algorithm(config.algorithm, aggregated_df, config)
+                    # Resolve selectionKeyId for this combination
+                    selection_key_obj = ForecastingEngine._resolve_selection_key_internal(db, product, customer, location)
+                    single_config = ForecastConfig(
+                        forecastBy=config.forecastBy,
+                        selectedProducts=[product],
+                        selectedCustomers=[customer],
+                        selectedLocations=[location],
+                        algorithm=config.algorithm,
+                        interval=config.interval,
+                        historicPeriod=config.historicPeriod,
+                        forecastPeriod=config.forecastPeriod,
+                        multiSelect=False,
+                        externalFactors=config.externalFactors,
+                        selectionKeyId=selection_key_obj.id # Add selectionKeyId here
+                    )
+
+                    result = ForecastingEngine.run_algorithm(config.algorithm, aggregated_df, single_config)
                     forecast_result = ForecastResult(
                         combination={"product": product, "customer": customer, "location": location},
                         selectedAlgorithm=result.algorithm,
@@ -3321,7 +3393,8 @@ class ForecastingEngine:
                         historicData=result.historicData,
                         forecastData=result.forecastData,
                         trend=result.trend,
-                        processLog=process_log if process_log is not None else []
+                        processLog=process_log if process_log is not None else [],
+                        selectionKeyId=single_config.selectionKeyId # Populate selectionKeyId
                     )
                 results.append(forecast_result)
                 successful_combinations += 1
@@ -3493,6 +3566,24 @@ class ForecastingEngine:
                 if process_log is not None:
                     process_log.append(f"\nProcessing combination: {combination_type} - {dim1_value} + {dim2_value}")
 
+                # Determine the actual product, customer, location for this combination
+                current_product = None
+                current_customer = None
+                current_location = None
+
+                if combination_type == 'product_customer':
+                    current_product = dim1_value
+                    current_customer = dim2_value
+                elif combination_type == 'product_location':
+                    current_product = dim1_value
+                    current_location = dim2_value
+                elif combination_type == 'customer_location':
+                    current_customer = dim1_value
+                    current_location = dim2_value
+
+                # Resolve selectionKeyId for this combination
+                selection_key_obj = ForecastingEngine._resolve_selection_key_internal(db, current_product, current_customer, current_location)
+
                 # Use dedicated two-dimensional aggregation
                 aggregated_df = ForecastingEngine.aggregate_two_dimensions(
                     full_df, config.interval, combination_type, dim1_value, dim2_value
@@ -3519,7 +3610,7 @@ class ForecastingEngine:
                 # Create a simplified config for the algorithm (it doesn't need the multi-select complexity)
                 algo_config = ForecastConfig(
                     forecastBy=config.forecastBy,
-                    selectedProducts=None,
+                    selectedProducts=None, # These are aggregated, so pass None
                     selectedCustomers=None,
                     selectedLocations=None,
                     algorithm=config.algorithm,
@@ -3527,7 +3618,9 @@ class ForecastingEngine:
                     historicPeriod=config.historicPeriod,
                     forecastPeriod=config.forecastPeriod,
                     multiSelect=False,
-                    externalFactors=config.externalFactors
+                    advancedMode=False, # This is not advanced mode (precise combinations)
+                    externalFactors=config.externalFactors,
+                    selectionKeyId=selection_key_obj.id # Add selectionKeyId here
                 )
 
                 # Run forecasting algorithm
@@ -3613,7 +3706,8 @@ class ForecastingEngine:
                         forecastData=best_result.forecastData,
                         trend=best_result.trend,
                         allAlgorithms=algorithm_results,
-                        processLog=process_log if process_log is not None else []
+                        processLog=process_log if process_log is not None else [],
+                        selectionKeyId=algo_config.selectionKeyId # Populate selectionKeyId
                     )
                 else:
                     if process_log is not None:
@@ -3629,7 +3723,8 @@ class ForecastingEngine:
                         historicData=result.historicData,
                         forecastData=result.forecastData,
                         trend=result.trend,
-                        processLog=process_log if process_log is not None else []
+                        processLog=process_log if process_log is not None else [],
+                        selectionKeyId=algo_config.selectionKeyId # Populate selectionKeyId
                     )
 
                 results.append(forecast_result)
@@ -3720,91 +3815,64 @@ async def health_check():
     """Health check endpoint"""
     return {"message": "Advanced Multi-variant Forecasting API with MySQL is running", "algorithms": list(ForecastingEngine.ALGORITHMS.values())}
 
-# Authentication endpoints
-# @app.post("/auth/register", response_model=UserResponse)
-# async def register(user_data: UserCreate, db: Session = Depends(get_db)):
-#     """Register a new user"""
-#     # Check if username already exists
-#     existing_user = db.query(User).filter(
-#         or_(User.username == user_data.username, User.email == user_data.email)
-#     ).first()
+# New endpoint to resolve or create selection keys
+@app.post("/selection_keys/resolve", response_model=ResolveSelectionKeyResult)
+async def resolve_selection_key(
+    request: ResolveSelectionKeyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user) # Assuming authentication is required
+):
+    """
+    Resolves or creates a unique ForecastSelectionKey for a given combination
+    of product, customer, and location.
+    """
+    product = request.product
+    customer = request.customer
+    location = request.location
 
-#     if existing_user:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Username or email already registered"
-#         )
+    # Query for existing key
+    query = db.query(ForecastSelectionKey).filter(
+        ForecastSelectionKey.product == product,
+        ForecastSelectionKey.customer == customer,
+        ForecastSelectionKey.location == location
+    )
+    existing_key = query.first()
 
-#     # Create new user
-#     hashed_password = User.hash_password(user_data.password)
-#     new_user = User(
-#         username=user_data.username,
-#         email=user_data.email,
-#         hashed_password=hashed_password,
-#         full_name=user_data.full_name,
-#         is_active=1
-#     )
-
-#     db.add(new_user)
-#     db.commit()
-#     db.refresh(new_user)
-
-#     return UserResponse(
-#         id=new_user.id,
-#         username=new_user.username,
-#         email=new_user.email,
-#         full_name=new_user.full_name,
-#         is_active=bool(new_user.is_active),
-#         created_at=new_user.created_at.isoformat()
-#     )
-
-# @app.post("/auth/login", response_model=Token)
-# async def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-#     """Login user and return access token"""
-#     user = db.query(User).filter(User.username == user_credentials.username).first()
-
-#     if not user or not user.verify_password(user_credentials.password):
-#         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED,
-#             detail="Incorrect username or password",
-#             headers={"WWW-Authenticate": "Bearer"},
-#         )
-
-#     if not user.is_active:
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Inactive user"
-#         )
-
-#     access_token_expires = timedelta(minutes=30)
-#     access_token = create_access_token(
-#         data={"sub": user.username}, expires_delta=access_token_expires
-#     )
-
-#     return Token(
-#         access_token=access_token,
-#         token_type="bearer",
-#         user=UserResponse(
-#             id=user.id,
-#             username=user.username,
-#             email=user.email,
-#             full_name=user.full_name,
-#             is_active=bool(user.is_active),
-#             created_at=user.created_at.isoformat()
-#         )
-#     )
-
-# @app.get("/auth/me", response_model=UserResponse)
-# async def get_current_user_info(current_user: User = Depends(get_current_user)):
-#     """Get current user information"""
-#     return UserResponse(
-#         id=current_user.id,
-#         username=current_user.username,
-#         email=current_user.email,
-#         full_name=current_user.full_name,
-#         is_active=bool(current_user.is_active),
-#         created_at=current_user.created_at.isoformat()
-#     )
+    if existing_key:
+        return ResolveSelectionKeyResult(
+            selection_key_id=existing_key.id,
+            selection_key=ForecastSelectionKeyResponse(
+                id=existing_key.id,
+                product=existing_key.product,
+                customer=existing_key.customer,
+                location=existing_key.location,
+                created_at=existing_key.created_at.isoformat(),
+                updated_at=existing_key.updated_at.isoformat()
+            ),
+            created=False
+        )
+    else:
+        # Create new key
+        new_key = ForecastSelectionKey(
+            product=product,
+            customer=customer,
+            location=location
+        )
+        db.add(new_key)
+        db.commit()
+        db.refresh(new_key)
+        return ResolveSelectionKeyResult(
+            selection_key_id=new_key.id,
+            selection_key=ForecastSelectionKeyResponse(
+                id=new_key.id,
+                product=new_key.product,
+                customer=new_key.customer,
+                location=new_key.location,
+                created_at=new_key.created_at.isoformat(),
+                updated_at=new_key.updated_at.isoformat()
+            ),
+            created=True
+        )
 
 @app.get("/admin/users", response_model=List[UserResponse])
 async def list_users(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -4183,7 +4251,7 @@ async def fetch_fred_data(
                 existing_records = set()
 
                 # Get existing records for this series to avoid duplicates
-                existing_query = db.query(ExternalFactorData.date).filter(
+                existing_query = db.query(ExternalFactorData.date, ExternalFactorData.factor_name).filter(
                     ExternalFactorData.factor_name == series_id
                 ).all()
 
@@ -4978,7 +5046,7 @@ async def upload_file(
 ENABLE_MODEL_CACHE = True  # Enable caching to improve performance with parallel execution
 
 @app.post("/forecast")
-def generate_forecast(
+async def generate_forecast( # Changed to async def
     config: ForecastConfig,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -5173,6 +5241,24 @@ def generate_forecast(
         else:
             # Single selection mode (backward compatibility)
             process_log.append("Running single selection mode")
+
+            # Determine the combination for the single forecast
+            product_val = config.selectedProduct or (config.selectedItem if config.forecastBy == 'product' else None)
+            customer_val = config.selectedCustomer or (config.selectedItem if config.forecastBy == 'customer' else None)
+            location_val = config.selectedLocation or (config.selectedItem if config.forecastBy == 'location' else None)
+
+            # Resolve selectionKeyId for this combination
+            try:
+                selection_key_result = await resolve_selection_key( # Await call
+                    ResolveSelectionKeyRequest(product=product_val, customer=customer_val, location=location_val),
+                    db, current_user # Pass dependencies
+                )
+                config.selectionKeyId = selection_key_result.selection_key_id
+                process_log.append(f"Resolved selectionKeyId: {config.selectionKeyId} (Created: {selection_key_result.created})")
+            except Exception as e:
+                process_log.append(f"Warning: Could not resolve selectionKeyId for single forecast: {str(e)}")
+                config.selectionKeyId = None # Ensure it's None if resolution fails
+
             result = ForecastingEngine.generate_forecast(db, config, process_log)
 
             # Auto-save the forecast result
